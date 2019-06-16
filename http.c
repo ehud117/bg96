@@ -60,23 +60,6 @@ int openComPort(char portDigit) {
         printf("Error from tcsetattr: %s\n", strerror(errno));
         return -1;
     }
-    
-        /*     struct termios tty; */
-        /* memset (&tty, 0, sizeof tty); */
-        /* if (tcgetattr (fd, &tty) != 0) */
-        /* { */
-        /*         printf ("error %d from tggetattr", errno); */
-        /*         return -1; */
-        /* } */
-        /*  */
-        /* tty.c_cc[VMIN]  = 0 ? 1 : 0; */
-        /* tty.c_cc[VTIME] = 5;            // 0.5 seconds read timeout */
-        /*  */
-        /* if (tcsetattr (fd, TCSANOW, &tty) != 0) */
-        /*         error_message ("error %d setting term attributes", errno); */
-    
-    
-    
     return 0;
 }
 
@@ -93,23 +76,12 @@ int64_t timeDiffMillisecond(struct timeval *x , struct timeval *y) {
 	return diff;
 }
 
-void drainSerialPortReadSimple(int secondsTO) {
-	struct timeval tlastread, tnow;
+static void drainSerialPortInput() {
+	uint8_t c;
 	
-	gettimeofday(&tlastread , NULL);
-	
-	int millisecondsTO = secondsTO * 1000;
-	millisecondsTO = millisecondsTO ?: DEFAULT_MAX_RESPONSE_TIME + 2;
-	
-	do {
-		uint8_t c;
-		if (read(comPoartFd, &c, 1) != 0) {
+	while (read(comPoartFd, &c, 1) == 1)
 			printf("%c", c);
-			gettimeofday(&tlastread , NULL);
-		}
-		gettimeofday(&tnow , NULL);
-	} while (timeDiffMillisecond(&tnow, &tlastread) < millisecondsTO);
-	printf("\ndoneSimple\n");
+	printf("\ndoneDrain\n");
 }
 
 #define MAX_EXPECTED_PHRASE_LEN 25
@@ -144,13 +116,10 @@ enum {
 	INSIDE_A_WORD,
 	EXPECTING_ENDING_LF
 };
-int drainSerialPortRead(int secondsTO, bool doDrainCompletely, char **searchForInResponse) {
+int totalWaits = 0;
+int searchInSerialPort(int secondsTO, char **searchForInResponse) {
 	char possiblyExpectedPhrase[MAX_EXPECTED_PHRASE_LEN];
 	
-	if (searchForInResponse == NULL) {
-		drainSerialPortReadSimple(secondsTO);
-		return 0;
-	}
 	if not(validateSearchForInResponseLength(searchForInResponse))
 		return -1;
 	
@@ -208,16 +177,16 @@ int drainSerialPortRead(int secondsTO, bool doDrainCompletely, char **searchForI
 		gettimeofday(&tnow , NULL);
 	} while (timeDiffMillisecond(&tnow, &tlastread) < millisecondsTO);
 foundExpected:
+	totalWaits += (int)timeDiffMillisecond(&tnow, &tfirstread);
 	printf("\ntotal time %dms\n", (int)timeDiffMillisecond(&tnow, &tfirstread));
 	if (retVal == -1)
 		printf("Did not find expected result in timely manner\n");
-	else if (doDrainCompletely)
-		drainSerialPortReadSimple(0);
 	printf("done\n");
 	return retVal;
 }
 
 void sendCommand(char *command) {
+	drainSerialPortInput();
 	printf("sending command %s\n", command);
 	write(comPoartFd, (uint8_t *)command, strlen(command));
 	write(comPoartFd, (uint8_t *)"\r", 1);
@@ -231,28 +200,13 @@ void writeComPort(char *str) {
 char *searchForOkay[] = {"OK", NULL};
 char *searchForConnect[] = {"CONNECT", NULL};
 #define MAX_AT_SYNC_TRIES 10
-bool atSync(void) {
-	int i;
-	for (i = 0; i < MAX_AT_SYNC_TRIES; i++) {
-		sendCommand("AT");
-		if (drainSerialPortRead(1, true, searchForOkay) == 0)
-			return true;
-	}
-	return false;
-}
 
 // Timeout according to quictek manuals (seconds)
 #define AT_CPIN_TIMEOUT 5
 #define AT_QIACT_TIMEOUT 150
 #define AT_QIDEACT_TIMEOUT 40
-#define POST_REQ_TIMEOUT   60
-bool checkSim(void) {
-	char *searchFor[] = {"+CPIN: READY", NULL};
-	sendCommand("AT+CPIN?");
-	if (drainSerialPortRead(AT_CPIN_TIMEOUT + 1, true, searchFor) == 0)
-		return true;
-	return false;
-}
+#define POST_HEADER_TIMEOUT   125
+#define POST_BODY_TIMEOUT   60
 
 int readIntFromSerial(void) {
 	uint8_t c;
@@ -282,7 +236,7 @@ int readIntFromSerial(void) {
 /* void checkSignalQuality(void) { */
 /* 	char *searchFor[] = {"+CSQ: ", NULL}; */
 /* 	sendCommand("AT+CSQ"); */
-/* 	drainSerialPortRead(1, false, searchFor); */
+/* 	searchInSerialPort(1, searchFor); */
 /* 	rssi = readIntFromSerial(); */
 /* 	drainSerialPortReadSimple(0); */
 /* 	 */
@@ -295,7 +249,14 @@ int main(int argc, char *argv[]) {
 	}
 	openComPort(argv[1][0]);
 	
-	if (atSync()) {
+	
+	int atSyncTryNumber;
+	for (atSyncTryNumber = 0; atSyncTryNumber < MAX_AT_SYNC_TRIES; atSyncTryNumber++) {
+		sendCommand("AT");
+		if (searchInSerialPort(0, searchForOkay) == 0)
+			break;
+	}
+	if (atSyncTryNumber < MAX_AT_SYNC_TRIES) {
 		printf("At synced\n");
 	} else {
 		printf("couldn't perform at sync,exiting\n");
@@ -304,59 +265,57 @@ int main(int argc, char *argv[]) {
 		
 	// Set echo off
 	sendCommand("ATE0");
-	drainSerialPortRead(1, true, searchForOkay);
+	searchInSerialPort(0, searchForOkay);
 	
-	if (checkSim()) {
-		printf("sim card ready\n");	
-	} else {
-		printf("sim card problem\n");	
-		goto end;
-	}
-
+	sendCommand("AT+CPIN?");
+	if (searchInSerialPort(AT_CPIN_TIMEOUT + 1, (char *[]){"+CPIN: READY", NULL}) != 0)
+		printf("Error in Sim card\n");
+	searchInSerialPort(0, searchForOkay);
+	
 	/* Use AT+QICSGP=1,1,"UNINET","","",0 to set APN as "UNINET",user name as "",password as ""*/
 	sendCommand("AT+QICSGP=1,1,\"UNINET\",\"\",\"\",0");
-	drainSerialPortRead(1, true, NULL);
+	searchInSerialPort(1, (char *[]){"OK", "ERROR", NULL});
 
 	/* checkSignalQuality(); */
 	/* printf("rssi is %d\n", rssi); */
 	
 	/* Activate context profile */	
 	sendCommand("AT+QIACT=1");
-	drainSerialPortRead(AT_QIACT_TIMEOUT + 1, true, searchForOkay);
+	searchInSerialPort(AT_QIACT_TIMEOUT + 1, (char *[]){"OK", "ERROR", NULL});
 	
 	
 	sendCommand("AT+QHTTPCFG=\"CONTEXTID\",1");
-	drainSerialPortRead(0, true, searchForOkay);
+	searchInSerialPort(0, (char *[]){"OK", "+CME ERROR", NULL});
 	
 	sendCommand("AT+QHTTPCFG=\"sslctxid\",1");
-	drainSerialPortRead(0, true, searchForOkay);
+	searchInSerialPort(0, (char *[]){"OK", "+CME ERROR", NULL});
 	
 	sendCommand("AT+QSSLCFG=\"sslversion\",1,3");
-	drainSerialPortRead(0, true, searchForOkay);
+	searchInSerialPort(0, (char *[]){"OK", "ERROR", NULL});
 	
-	sendCommand("AT+QSSLCFG=\"ciphersuite\",1,0xFFFF");
-	drainSerialPortRead(0, true, searchForOkay);
+	sendCommand("AT+QSSLCFG=\"ciphersuite\",1,0xFFFF"); // TODO: correct ciphersuite
+	searchInSerialPort(0, (char *[]){"OK", "ERROR", NULL});
 	
 	
 #define URL "https://postman-echo.com/post"
 	char temp[30];
 	sprintf(temp, "at+qhttpurl=%d", (int)strlen(URL));
 	sendCommand(temp);
-	drainSerialPortRead(0, true, searchForConnect);
+	searchInSerialPort(0, (char *[]){"CONNECT", "+CME ERROR", NULL});
 	
 	// Write the URL.
 	writeComPort(URL);
-	drainSerialPortRead(0, true, searchForOkay); // TODO: add Url error handling ("+CME ERROR:")
+	searchInSerialPort(0, (char *[]){"OK", "+CME ERROR", NULL});
 	
 	
 #define POST_REQ_BODY "abcdefg"
 	sprintf(temp, "at+qhttppost=%d", (int)strlen(POST_REQ_BODY));
 	sendCommand(temp);
-	drainSerialPortRead(POST_REQ_TIMEOUT + 1, true, searchForConnect);
+	searchInSerialPort(POST_HEADER_TIMEOUT + 1, (char *[]){"CONNECT", "+CME ERROR", NULL});
 	
 	// Write the POST_REQ_BODY.
 	writeComPort(POST_REQ_BODY);
-	drainSerialPortRead(POST_REQ_TIMEOUT + 1, false, (char *[]) {"+QHTTPPOST: ", NULL});
+	searchInSerialPort(POST_BODY_TIMEOUT + 1, (char *[]) {"+QHTTPPOST: ", "+CME ERROR", NULL});
 	int err = readIntFromSerial();
 	int httpResponseStatus = readIntFromSerial();
 	printf("returned with err,status: %d,%d\n", err, httpResponseStatus);
@@ -366,15 +325,12 @@ int main(int argc, char *argv[]) {
 				
 	/* Use AT+QIDEACT=1 to deactivate GPRS context */
 	sendCommand("AT+QIDEACT=1");
-	drainSerialPortRead(AT_QIDEACT_TIMEOUT + 1, true, searchForOkay);
-	/*  */
+	searchInSerialPort(AT_QIDEACT_TIMEOUT + 1, (char *[]){"OK", "ERROR", NULL});
 end:
+	printf("Total time %d (%d)", totalWaits, totalWaits /1000);
 	printf("closing com port\n");
 	close(comPoartFd);
 	printf("closed\n");
 	return 0;
 } 
-
-
-
 
