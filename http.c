@@ -57,7 +57,7 @@ struct atCommandFlow completePostFlow[] = {
 	{setUrlPart2,            (onAtResponse[]){{"OK", setPostBodyPart1},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
 	{setPostBodyPart1,       (onAtResponse[]){{"CONNECT", setPostBodyPart2},        {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
 	{setPostBodyPart2,       (onAtResponse[]){{"+QHTTPPOST: ", readResponseStatus}, {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
-	{readResponseStatus,     (onAtResponse[]){{NULL, NULL}}}, // Flow is defined inside the function
+	//{readResponseStatus,     (onAtResponse[]){{NULL, NULL}}}, // Flow is defined inside the function
 	{deactiveContextProfile, (onAtResponse[]){{"OK", closeComPort},                 {"ERROR", closeComPort},      {NULL, closeComPort}}},
 	{NULL, NULL}
 };
