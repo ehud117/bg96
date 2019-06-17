@@ -12,6 +12,8 @@
 #define DEFAULT_MAX_RESPONSE_TIME 300
 
 static void deactiveContextProfile(void);
+static void readResponseBody(void);
+
 #define URL "https://postman-echo.com/post"
 #define POST_REQ_BODY "abcdefg"
 static void atSync(void)                 { sendCommand("AT"); }
@@ -23,9 +25,7 @@ static void activateContextProfile(void) { sendCommand("AT+QIACT=1"); }
 static void configHttpContextId(void)    { sendCommand("AT+QHTTPCFG=\"CONTEXTID\",1"); }
 static void configHttpSslContextId(void) { sendCommand("AT+QHTTPCFG=\"sslctxid\",1"); }
 static void configSslVersion(void)       { sendCommand("AT+QSSLCFG=\"sslversion\",1,3"); }
-/* TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,
-   TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_RSA_WITH_AES_256_CBC_SHA256 */
-static void configCipherSuite(void)      { sendCommand("AT+QSSLCFG=\"ciphersuite\",1,0xC027,0xC028,0xC02F,0x003D"); } // TODO: correct ciphersuite 
+static void configCipherSuite(void)      { sendCommand("AT+QSSLCFG=\"ciphersuite\",1,0xC027,0xC028,0xC02F,0x003D"); } /* TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_RSA_WITH_AES_256_CBC_SHA256 */
 static void setUrlPart1(void)            { char temp[30]; sprintf(temp, "at+qhttpurl=%d", (int)strlen(URL)); sendCommand(temp); }
 static void setUrlPart2(void)            { writeComPort(URL); }
 static void setPostBodyPart1(void)       { char temp[30]; sprintf(temp, "at+qhttppost=%d", (int)strlen(POST_REQ_BODY)); sendCommand(temp); }
@@ -35,9 +35,17 @@ static void readResponseStatus(void) {
 	int httpResponseStatus = readIntFromSerial();
 	printf("returned with err,status: %d,%d\n", err, httpResponseStatus);
 			
-	if (err != 0 || httpResponseStatus != 200)
+	if (err != 0 || httpResponseStatus != 200) {
 		printf("error in response detected\n");
-	
+		startCommand(deactiveContextProfile);
+	} else {
+		startCommand(readResponseBody);
+	}
+}
+static void readResponseBody(void) { sendCommand("AT+QHTTPREAD");}
+static void readResponseBodyErrCode() {
+	int err = readIntFromSerial();
+	printf("err code: %d\n", err);
 	startCommand(deactiveContextProfile);
 }
 static void deactiveContextProfile(void) { sendCommand("AT+QIDEACT=1"); }
@@ -57,7 +65,8 @@ struct atCommandFlow completePostFlow[] = {
 	{setUrlPart2,            (onAtResponse[]){{"OK", setPostBodyPart1},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
 	{setPostBodyPart1,       (onAtResponse[]){{"CONNECT", setPostBodyPart2},        {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
 	{setPostBodyPart2,       (onAtResponse[]){{"+QHTTPPOST: ", readResponseStatus}, {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
-	//{readResponseStatus,     (onAtResponse[]){{NULL, NULL}}}, // Flow is defined inside the function
+	/* {readResponseStatus,     (onAtResponse[]){{NULL, NULL}}}, // Flow is defined inside the function */
+	{readResponseBody,       (onAtResponse[]){{"+QHTTPREAD: ", readResponseBodyErrCode}, {"+CME ERROR: ", readResponseBodyErrCode}, {NULL, deactiveContextProfile}}},
 	{deactiveContextProfile, (onAtResponse[]){{"OK", closeComPort},                 {"ERROR", closeComPort},      {NULL, closeComPort}}},
 	{NULL, NULL}
 };
@@ -71,6 +80,7 @@ struct atCommandFlow completePostFlow[] = {
 #define AT_QIDEACT_TIMEOUT 40
 #define POST_HEADER_TIMEOUT   125
 #define POST_BODY_TIMEOUT   60
+#define RESPONSE_READ_TIMEOUT   60
 
 /* int rssi; */
 /* void checkSignalQuality(void) { */
@@ -112,7 +122,7 @@ int main(int argc, char *argv[]) {
 		usleep(20 * 1000);
 		
 		checkModem();
-		if (i == 5) {
+		if (i == 15) {
 			startCommand(atSync);
 		}
 	}	
