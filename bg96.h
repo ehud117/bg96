@@ -8,8 +8,8 @@ typedef struct {
 
 struct atCommandFlow {
 	void (*func)(void);
+	int secondsTimeout;
 	onAtResponse *possibleResponses;
-	/* int millisecondsTimeout; */
 };
 
 extern int  openComPort(char portDigit);
@@ -21,5 +21,6 @@ extern void checkModem(void);
 extern void startCommand(void (*func)(void));
 
 #define not(X) (!(X))
+#define TEN_P3 1000
 
 #endif

@@ -96,7 +96,7 @@ enum {
 	EXPECTING_CR,
 	EXPECTING_LF,
 	INSIDE_A_WORD,
-	EXPECTING_ENDING_LF
+	EXPECTING_ENDING_LF // TODO: remove
 };
 
 #define MAX_EXPECTED_PHRASE_LEN 25
@@ -107,6 +107,7 @@ struct timeval tlastread, tnow;
 static int writeIndex = 0;
 void resetSearchInSerialPort() {
 	writeIndex = 0;
+	gettimeofday(&tlastread , NULL);
 }
 
 static bool validateSearchForInResponseLength() {
@@ -123,6 +124,13 @@ static bool validateSearchForInResponseLength() {
 		}
 	}
 	return true;
+}
+static int findTimeoutIndex() {
+	onAtResponse *possibleResponses = currentCommand->possibleResponses;
+	int i;
+	for (i = 0; possibleResponses[i].responseText; i++)
+		;
+	return i;
 }
 static int searchInSerialPort() {
 	onAtResponse *possibleResponses = currentCommand->possibleResponses;
@@ -227,16 +235,25 @@ struct atCommandFlow *findFuncInFlow(void (*f)(void)) {
 	return NULL;
 }
 
+#define MINIMAL_TIMEOUT 300 // milliseconds
 void checkModem(void) {
 	if not(currentCommand)
 		return;
 	
-	int searchResult = searchInSerialPort();
-	if (searchResult == -1)
-		return;
+	int nextCommandIndex = searchInSerialPort();
+	if (nextCommandIndex == -1) {
+		gettimeofday(&tnow , NULL);
+		int millisecondsTO = 1000 * currentCommand->secondsTimeout + MINIMAL_TIMEOUT;
+		if (timeDiffMillisecond(&tnow, &tlastread) > millisecondsTO) {
+			printf("timeDiff %d is gt %d\n", (int)timeDiffMillisecond(&tnow, &tlastread), millisecondsTO);
+			nextCommandIndex = findTimeoutIndex();	
+		} else {
+			return;
+		}
+	}
 	printf("%c", '\n');
 	// continue to next command
-	void (*nextCommandFunc)(void) = currentCommand->possibleResponses[searchResult].doOnResponseText;
+	void (*nextCommandFunc)(void) = currentCommand->possibleResponses[nextCommandIndex].doOnResponseText;
 	if (nextCommandFunc == NULL)
 		return;
 	currentCommand = findFuncInFlow(nextCommandFunc);
@@ -246,6 +263,7 @@ void checkModem(void) {
 void startCommand(void (*func)(void)) {
 	currentCommand = findFuncInFlow(func);
 	func();
+	resetSearchInSerialPort();
 }
 
 
