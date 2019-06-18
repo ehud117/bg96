@@ -255,9 +255,9 @@ void checkModem(void) {
 	// continue to next command
 	void (*nextCommandFunc)(void) = currentCommand->possibleResponses[nextCommandIndex].doOnResponseText;
 	if (nextCommandFunc == NULL)
-		return;
-	currentCommand = findFuncInFlow(nextCommandFunc);
-	nextCommandFunc();
+		currentCommand = NULL;
+	else
+		startCommand(nextCommandFunc);
 }
 
 void startCommand(void (*func)(void)) {
