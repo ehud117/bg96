@@ -55,7 +55,7 @@ int openComPort(char portDigit) {
 
     /* fetch bytes as they become available */
     tty.c_cc[VMIN] = 0;
-    tty.c_cc[VTIME] = 5;
+    tty.c_cc[VTIME] = 0;
 
     if (tcsetattr(comPoartFd, TCSANOW, &tty) != 0) {
         printf("Error from tcsetattr: %s\n", strerror(errno));
