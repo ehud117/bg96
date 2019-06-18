@@ -96,7 +96,6 @@ enum {
 	EXPECTING_CR,
 	EXPECTING_LF,
 	INSIDE_A_WORD,
-	EXPECTING_ENDING_LF // TODO: remove
 };
 
 #define MAX_EXPECTED_PHRASE_LEN 25
@@ -144,11 +143,10 @@ static int searchInSerialPort() {
 		printf("%c", c);
 		gettimeofday(&tlastread , NULL);
 		switch (state) {
+			
 			case EXPECTING_CR:
 				if (c == '\r')
 					state = EXPECTING_LF;
-				break;
-				
 			case EXPECTING_LF:
 				if (c == '\n') {
 					state = INSIDE_A_WORD;
@@ -158,10 +156,7 @@ static int searchInSerialPort() {
 			
 			case INSIDE_A_WORD:
 				if (c == '\r') {
-					if (writeIndex != 0)
-						state = EXPECTING_ENDING_LF;
-					else
-						state = EXPECTING_LF;	
+					state = EXPECTING_LF;	
 				} else {
 					possiblyExpectedPhrase[writeIndex++] = c;
 					possiblyExpectedPhrase[writeIndex] = '\0';
@@ -173,11 +168,6 @@ static int searchInSerialPort() {
 				}
 				break;
 			
-			case EXPECTING_ENDING_LF:
-				if (c== '\n')
-					state = EXPECTING_CR;
-				break;
-				
 		}
 	}
 	return -1;
