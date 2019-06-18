@@ -16,7 +16,21 @@ static void readResponseBody(void);
 
 #define URL "https://postman-echo.com/post"
 #define POST_REQ_BODY "abcdefg"
-static void atSync(void)                 { sendCommand("AT"); } // TODO: fix
+
+#define MAX_AT_SYNC_TRIES 10
+static int atSyncCounter;
+static void atSyncContinue(void);
+static void atSyncStart(void) { atSyncCounter = 0; atSyncContinue(); }
+static void atSyncContinue(void) { 
+	
+	atSyncCounter++;
+	if (atSyncCounter > MAX_AT_SYNC_TRIES) {
+		startCommand(closeComPort);
+		return;
+	}
+	
+	sendCommand("AT"); 
+}
 static void echoOff(void)                { sendCommand("ATE0"); }
 static void checkSimPart1(void)          { sendCommand("AT+CPIN?"); }
 static void checkSimPart2()              { }
@@ -60,44 +74,44 @@ static void deactiveContextProfile(void) { sendCommand("AT+QIDEACT=1"); }
 #define QIDEACT_TIMEOUT       40
 
 struct atCommandFlow completePostFlow[] = {
-	{atSync, 0, 
-		(onAtResponse[]){{"OK", echoOff},                      {NULL, closeComPort}}},
-	{echoOff, 0,
- 		(onAtResponse[]){{"OK", checkSimPart1},                {NULL, closeComPort}}},
-	{checkSimPart1, CPIN_TIMEOUT, 
-		(onAtResponse[]){{"+CPIN: READY", checkSimPart2},      {NULL, closeComPort}}},
-	{checkSimPart2, 0,
- 		(onAtResponse[]){{"OK", setApn},                       {NULL, closeComPort}}},
-	{setApn, 0, 
-		(onAtResponse[]){{"OK", activateContextProfile},       {"ERROR", closeComPort},      {NULL, closeComPort}}},
-	{activateContextProfile, QIACT_TIMEOUT, 
-		(onAtResponse[]){{"OK", configHttpContextId},          {"ERROR", deactiveContextProfile},      { NULL, deactiveContextProfile}}},
-	{configHttpContextId, 0,
-	     	(onAtResponse[]){{"OK", configHttpSslContextId},       {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
-	{configHttpSslContextId, 0,
-		(onAtResponse[]){{"OK", configSslVersion},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
-	{configSslVersion, 0,
-	 	(onAtResponse[]){{"OK", configCipherSuite},            {"ERROR",      deactiveContextProfile},      {NULL, deactiveContextProfile}}},
-	{configCipherSuite, 0,
-	   	(onAtResponse[]){{"OK", setUrlPart1},                  {"ERROR",      deactiveContextProfile},      {NULL, deactiveContextProfile}}},
-	{setUrlPart1, 0,
-    		(onAtResponse[]){{"CONNECT", setUrlPart2},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
-	{setUrlPart2, 0,
-     		(onAtResponse[]){{"OK", setPostHeaders},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
-	{setPostHeaders, POST_HEADER_TIMEOUT,
-		(onAtResponse[]){{"CONNECT", setPostBody},        {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
-	{setPostBody, POST_BODY_TIMEOUT,
-	 	(onAtResponse[]){{"+QHTTPPOST: ", readResponseStatus}, {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
+	{atSyncStart, 0, (onAtResponse[])
+		{{"OK", echoOff},                      {NULL, atSyncContinue}}},
+	{atSyncContinue, 0, 
+		(onAtResponse[]){{"OK", echoOff},      {NULL, atSyncContinue}}},
+	{echoOff, 0, (onAtResponse[])
+		{{"OK", checkSimPart1},                {NULL, closeComPort}}},
+	{checkSimPart1, CPIN_TIMEOUT, (onAtResponse[])
+		{{"+CPIN: READY", checkSimPart2},      {NULL, closeComPort}}},
+	{checkSimPart2, 0, (onAtResponse[])
+		{{"OK", setApn},                       {NULL, closeComPort}}},
+	{setApn, 0, (onAtResponse[])
+		{{"OK", activateContextProfile},       {"ERROR", closeComPort},      {NULL, closeComPort}}},
+	{activateContextProfile, QIACT_TIMEOUT, (onAtResponse[])
+		{{"OK", configHttpContextId},          {"ERROR", deactiveContextProfile},      { NULL, deactiveContextProfile}}},
+	{configHttpContextId, 0, (onAtResponse[])
+		{{"OK", configHttpSslContextId},       {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
+	{configHttpSslContextId, 0, (onAtResponse[])
+		{{"OK", configSslVersion},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
+	{configSslVersion, 0, (onAtResponse[])
+		{{"OK", configCipherSuite},            {"ERROR",      deactiveContextProfile},      {NULL, deactiveContextProfile}}},
+	{configCipherSuite, 0, (onAtResponse[])
+		{{"OK", setUrlPart1},                  {"ERROR",      deactiveContextProfile},      {NULL, deactiveContextProfile}}},
+	{setUrlPart1, 0, (onAtResponse[])
+		{{"CONNECT", setUrlPart2},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
+	{setUrlPart2, 0, (onAtResponse[])
+		{{"OK", setPostHeaders},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
+	{setPostHeaders, POST_HEADER_TIMEOUT, (onAtResponse[])
+		{{"CONNECT", setPostBody},        {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
+	{setPostBody, POST_BODY_TIMEOUT, (onAtResponse[])
+		{{"+QHTTPPOST: ", readResponseStatus}, {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
 	/* {readResponseStatus,     (onAtResponse[]){{NULL, NULL}}}, // Flow is defined inside the function */
-	{readResponseBody, RESPONSE_READ_TIMEOUT,
-		(onAtResponse[]){{"+QHTTPREAD: ", readResponseBodyErrCode}, {"+CME ERROR: ", readResponseBodyErrCode}, {NULL, deactiveContextProfile}}},
-	{deactiveContextProfile, QIDEACT_TIMEOUT,
-		(onAtResponse[]){{"OK", closeComPort},                 {"ERROR", closeComPort},      {NULL, closeComPort}}},
+	{readResponseBody, RESPONSE_READ_TIMEOUT, (onAtResponse[])
+		{{"+QHTTPREAD: ", readResponseBodyErrCode}, {"+CME ERROR: ", readResponseBodyErrCode}, {NULL, deactiveContextProfile}}},
+	{deactiveContextProfile, QIDEACT_TIMEOUT, (onAtResponse[])
+		{{"OK", closeComPort},                 {"ERROR", closeComPort},      {NULL, closeComPort}}},
 	{NULL, 0, NULL}
 };
 
-
-#define MAX_AT_SYNC_TRIES 10
 
 
 /* int rssi; */
@@ -141,7 +155,7 @@ int main(int argc, char *argv[]) {
 		
 		checkModem();
 		if (i == 15) {
-			startCommand(atSync);
+			startCommand(atSyncStart);
 		}
 	}	
 
