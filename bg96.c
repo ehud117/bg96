@@ -92,11 +92,6 @@ int searchForMatch(char *phrase) {
 	return -1;
 }
 
-enum {
-	EXPECTING_CR,
-	EXPECTING_LF,
-	INSIDE_A_WORD,
-};
 
 #define MAX_EXPECTED_PHRASE_LEN 25
 #define MAX_EXPECTED_RESULTS  10
@@ -104,8 +99,15 @@ int totalWaits = 0;
 static char possiblyExpectedPhrase[MAX_EXPECTED_PHRASE_LEN];
 struct timeval tlastread, tnow;
 static int writeIndex = 0;
+enum {
+	EXPECTING_CR,
+	EXPECTING_LF,
+	INSIDE_A_WORD,
+};
+static int inputSearchState = EXPECTING_CR;
 void resetSearchInSerialPort() {
 	writeIndex = 0;
+	inputSearchState = EXPECTING_CR;
 	gettimeofday(&tlastread , NULL);
 }
 
@@ -137,26 +139,26 @@ static int searchInSerialPort() {
 	if not(validateSearchForInResponseLength(possibleResponses))
 		return -1;
 	
-	int state = EXPECTING_CR;
+	int inputSearchState = EXPECTING_CR;
 	uint8_t c;
 	while (read(comPoartFd, &c, 1) == 1) {
 		printf("%c", c);
 		gettimeofday(&tlastread , NULL);
-		switch (state) {
+		switch (inputSearchState) {
 			
 			case EXPECTING_CR:
 				if (c == '\r')
-					state = EXPECTING_LF;
+					inputSearchState = EXPECTING_LF;
 			case EXPECTING_LF:
 				if (c == '\n') {
-					state = INSIDE_A_WORD;
+					inputSearchState = INSIDE_A_WORD;
 					writeIndex = 0;
 				}
 				break;
 			
 			case INSIDE_A_WORD:
 				if (c == '\r') {
-					state = EXPECTING_LF;	
+					inputSearchState = EXPECTING_LF;	
 				} else {
 					possiblyExpectedPhrase[writeIndex++] = c;
 					possiblyExpectedPhrase[writeIndex] = '\0';
