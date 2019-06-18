@@ -123,22 +123,6 @@ struct atCommandFlow completePostFlow[] = {
 /* 	drainSerialPortReadSimple(0); */
 /* 	 */
 /* } */
-/* static void atSync(void) { */
-/* 	 */
-/* 	int atSyncTryNumber; */
-/* 	for (atSyncTryNumber = 0; atSyncTryNumber < MAX_AT_SYNC_TRIES; atSyncTryNumber++) { */
-/* 		sendCommand("AT"); */
-/* 		if (searchInSerialPort(0, searchForOkay) == 0) */
-/* 			break; */
-/* 	} */
-/* 	if (atSyncTryNumber < MAX_AT_SYNC_TRIES) { */
-/* 		printf("At synced\n"); */
-/* 	} else { */
-/* 		printf("couldn't perform at sync,exiting\n"); */
-/* 		#<{(| goto end; |)}># */
-/* 	} */
-/* } */
-
 
 
 int main(int argc, char *argv[]) {
