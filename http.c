@@ -52,7 +52,7 @@ static void atSyncContinue(void) {
 static void echoOff(void)                { sendCommand("ATE0"); }
 static void checkSimPart1(void)          { sendCommand("AT+CPIN?"); }
 static void checkSimPart2()              { }
-static void setApn(void)                 { sendCommand("AT+QICSGP=1,1,\"UNINET\",\"\",\"\",0"); }
+static void setApn(void)                 { sendCommand("AT+QICSGP=1,1,\"ESEYE.COM\",\"USER\",\"PASS\",0"); }
 static void activateContextProfile(void) { sendCommand("AT+QIACT=1"); }
 static void configHttpContextId(void)    { sendCommand("AT+QHTTPCFG=\"CONTEXTID\",1"); }
 static void configHttpSslContextId(void) { sendCommand("AT+QHTTPCFG=\"sslctxid\",1"); }
