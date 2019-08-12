@@ -15,7 +15,8 @@ static void deactiveContextProfile(void);
 static void readResponseBody(void);
 
 #define URL "https://postman-echo.com/post"
-#define POST_REQ_BODY "abcdefg"
+#define POST_REQ_HEADER_AND_BODY "POST https://postman-echo.com/post HTTP/1.1\r\nHost: postman-echo.com\r\nAccept: */*\r\nUser-Agent: QUECTEL_MODULE\r\nConnection: Keep-Alive\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 48\r\n\r\nMessage=1111&Appleqty=2222&Orangeqty=3333&find=1"
+
 
 #define MAX_AT_SYNC_TRIES 10
 static int atSyncCounter;
@@ -34,16 +35,17 @@ static void atSyncContinue(void) {
 static void echoOff(void)                { sendCommand("ATE0"); }
 static void checkSimPart1(void)          { sendCommand("AT+CPIN?"); }
 static void checkSimPart2()              { }
-static void setApn(void)                 { sendCommand("AT+QICSGP=1,1,\"UNINET\",\"\",\"\",0"); }
+static void setApn(void)                 { sendCommand("AT+QICSGP=1,1,\"ESEYE.COM\",\"USER\",\"PASS\",1"); }
 static void activateContextProfile(void) { sendCommand("AT+QIACT=1"); }
 static void configHttpContextId(void)    { sendCommand("AT+QHTTPCFG=\"CONTEXTID\",1"); }
 static void configHttpSslContextId(void) { sendCommand("AT+QHTTPCFG=\"sslctxid\",1"); }
+static void configWithHeaders(void)      { sendCommand("AT+QHTTPCFG=\"requestheader\",1"); }
 static void configSslVersion(void)       { sendCommand("AT+QSSLCFG=\"sslversion\",1,3"); }
 static void configCipherSuite(void)      { sendCommand("AT+QSSLCFG=\"ciphersuite\",1,0xC027,0xC028,0xC02F,0x003D"); } /* TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_RSA_WITH_AES_256_CBC_SHA256 */
 static void setUrlPart1(void)            { char temp[30]; sprintf(temp, "at+qhttpurl=%d", (int)strlen(URL)); sendCommand(temp); }
 static void setUrlPart2(void)            { writeComPort(URL); }
-static void setPostHeaders(void)       { char temp[30]; sprintf(temp, "at+qhttppost=%d", (int)strlen(POST_REQ_BODY)); sendCommand(temp); }
-static void setPostBody(void)       { writeComPort(POST_REQ_BODY); }
+static void startPostRequest(void)       { char temp[30]; sprintf(temp, "at+qhttppost=%d", (int)strlen(POST_REQ_HEADER_AND_BODY)); sendCommand(temp); }
+static void setPostBody(void)       { writeComPort(POST_REQ_HEADER_AND_BODY); }
 static void readResponseStatus(void) {
 	int err = readIntFromSerial();
 	int httpResponseStatus = readIntFromSerial();
@@ -91,6 +93,8 @@ struct atCommandFlow completePostFlow[] = {
 	{configHttpContextId, 0, (onAtResponse[])
 		{{"OK", configHttpSslContextId},       {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
 	{configHttpSslContextId, 0, (onAtResponse[])
+		{{"OK", configWithHeaders},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
+	{configWithHeaders, 0, (onAtResponse[])
 		{{"OK", configSslVersion},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
 	{configSslVersion, 0, (onAtResponse[])
 		{{"OK", configCipherSuite},            {"ERROR",      deactiveContextProfile},      {NULL, deactiveContextProfile}}},
@@ -99,8 +103,8 @@ struct atCommandFlow completePostFlow[] = {
 	{setUrlPart1, 0, (onAtResponse[])
 		{{"CONNECT", setUrlPart2},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
 	{setUrlPart2, 0, (onAtResponse[])
-		{{"OK", setPostHeaders},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
-	{setPostHeaders, POST_HEADER_TIMEOUT, (onAtResponse[])
+		{{"OK", startPostRequest},             {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
+	{startPostRequest, POST_HEADER_TIMEOUT, (onAtResponse[])
 		{{"CONNECT", setPostBody},        {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
 	{setPostBody, POST_BODY_TIMEOUT, (onAtResponse[])
 		{{"+QHTTPPOST: ", readResponseStatus}, {"+CME ERROR", deactiveContextProfile}, {NULL, deactiveContextProfile}}},
